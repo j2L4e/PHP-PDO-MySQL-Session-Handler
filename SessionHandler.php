@@ -12,7 +12,7 @@
  * @author  Manuel Reinhard <manu@sprain.ch>
  * @link    https://github.com/sprain/PHP-MySQL-Session-Handler
  */
-class MMSessionHandler
+class SessionHandler
 {
   /**
    * a PDO connection resource
