@@ -4,7 +4,7 @@ require_once('SessionHandler.php');
 $session = new SessionHandler();
 
 // add db data
-$session->setDbDetails('localhost', 'username', 'password', 'database');
+$session->setDbDetails('localhost', 'username', 'password', 'database', 'utf8');
 
 // OR alternatively send a MySQLi ressource
 // $session->setDbConnection($mysqli);
