@@ -1,7 +1,7 @@
 <?php
 require_once('SessionHandler.php');
 
-$session = new SessionHandler();
+$session = new JL\SessionHandler();
 
 // add db data
 $session->setDbDetails('localhost', 'username', 'password', 'database', 'utf8');
