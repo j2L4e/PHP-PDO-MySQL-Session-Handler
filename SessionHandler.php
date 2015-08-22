@@ -1,4 +1,4 @@
-<?php
+<?php namespace JL;
 
 /**
  * A PHP session handler using PDO to keep session data within a MySQL database
@@ -12,7 +12,11 @@
  * @author  Manuel Reinhard <manu@sprain.ch>
  * @link    https://github.com/sprain/PHP-MySQL-Session-Handler
  */
-class SessionHandler
+
+use PDO;
+use SessionHandlerInterface;
+
+class SessionHandler implements SessionHandlerInterface
 {
   /**
    * a PDO connection resource
@@ -75,7 +79,7 @@ class SessionHandler
    * Open the session
    * @return bool
    */
-  public function open() {
+  public function open($save_path, $session_name) {
     //delete old session handlers
     $limit = time() - (3600 * 24);
     $stmt = $this->dbh->prepare("DELETE FROM {$this->dbTable} WHERE timestamp < :limit");
