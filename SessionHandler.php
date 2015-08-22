@@ -1,163 +1,164 @@
 <?php
 
 /**
-* A PHP session handler to keep session data within a MySQL database
-*
-* @author 	Manuel Reinhard <manu@sprain.ch>
-* @link		https://github.com/sprain/PHP-MySQL-Session-Handler
-*/
-
-class SessionHandler{
-
-    /**
-     * a database MySQLi connection resource
-     * @var resource
-     */
-    protected $dbConnection;
-    
-    
-    /**
-     * the name of the DB table which handles the sessions
-     * @var string
-     */
-    protected $dbTable;
-	
+ * A PHP session handler using PDO to keep session data within a MySQL database
+ *
+ * @author  Jan Lohage <info@j2l4e.de>
+ * @link    https://github.com/j2L4e/PHP-PDO-MySQL-Session-Handler
+ *
+ *
+ * Based on PHP-MySQL-Session-Handler (uses mysqli)
+ *
+ * @author  Manuel Reinhard <manu@sprain.ch>
+ * @link    https://github.com/sprain/PHP-MySQL-Session-Handler
+ */
+class MMSessionHandler
+{
+  /**
+   * a PDO connection resource
+   * @var resource
+   */
+  protected $dbh;
 
 
-	/**
-	 * Set db data if no connection is being injected
-	 * @param 	string	$dbHost	
-	 * @param	string	$dbUser
-	 * @param	string	$dbPassword
-	 * @param	string	$dbDatabase
-	 */	
-	public function setDbDetails($dbHost, $dbUser, $dbPassword, $dbDatabase){
+  /**
+   * the name of the DB table which handles the sessions
+   * @var string
+   */
+  protected $dbTable;
 
-		//create db connection
-		$this->dbConnection = new mysqli($dbHost, $dbUser, $dbPassword, $dbDatabase);
-		
-		//check connection
-		if (mysqli_connect_error()) {
-		    throw new Exception('Connect Error (' . mysqli_connect_errno() . ') ' . mysqli_connect_error());
-		}//if
-			
-	}//function
-	
-	
-	
-	/**
-	 * Inject DB connection from outside
-	 * @param 	object	$dbConnection	expects MySQLi object
-	 */
-	public function setDbConnection($dbConnection){
-	
-		$this->dbConnection = $dbConnection;
-		
-	}
-	
-	
-	/**
-	 * Inject DB connection from outside
-	 * @param 	object	$dbConnection	expects MySQLi object
-	 */
-	public function setDbTable($dbTable){
-	
-		$this->dbTable = $dbTable;
-		
-	}
-	
 
-    /**
-     * Open the session
-     * @return bool
-     */
-    public function open() {
-  
-        //delete old session handlers
-        $limit = time() - (3600 * 24);
-        $sql = sprintf("DELETE FROM %s WHERE timestamp < %s", $this->dbTable, $limit);
-        return $this->dbConnection->query($sql);
+  /**
+   * Set db data if no connection is being injected
+   * @param  string $dbHost
+   * @param  string $dbUser
+   * @param  string $dbPassword
+   * @param  string $dbDatabase
+   * @param  string $dbCharset optional, default 'utf8'
+   */
+  public function setDbDetails($dbHost, $dbUser, $dbPassword, $dbDatabase, $dbCharset = 'utf8') {
 
+    //create db connection
+    $this->dbh = new PDO("mysql:" .
+      "host={$dbHost};" .
+      "dbname={$dbDatabase};" .
+      "charset={$dbCharset}",
+      $dbUser,
+      $dbPassword,
+      array(
+        PDO::ATTR_EMULATE_PREPARES => false,
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION //USE ERRMODE_SILENT FOR PRODUCTION!
+      )
+    );
+  }//function
+
+
+  /**
+   * Inject PDO from outside
+   * @param object $dbh expects PDO object
+   */
+  public function setPDO($dbh) {
+    $this->dbh = $dbh;
+  }
+
+
+  /**
+   * Set MySQL table to work with
+   * @param string $dbTable
+   */
+  public function setDbTable($dbTable) {
+    $this->dbTable = $dbTable;
+  }
+
+
+  /**
+   * Open the session
+   * @return bool
+   */
+  public function open() {
+    //delete old session handlers
+    $limit = time() - (3600 * 24);
+    $stmt = $this->dbh->prepare("DELETE FROM {$this->dbTable} WHERE timestamp < :limit");
+    $ret = $stmt->execute(array(':limit' => $limit));
+
+    return $ret;
+  }
+
+  /**
+   * Close the session
+   * @return bool
+   */
+  public function close() {
+    $this->dbh = null;
+  }
+
+  /**
+   * Read the session
+   * @param int session id
+   * @return string string of the sessoin
+   */
+  public function read($id) {
+    $stmt = $this->dbh->prepare("SELECT * FROM {$this->dbTable} WHERE id=:id");
+    $stmt->execute(array(':id' => $id));
+
+    $session = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($session) {
+      $ret = $session['data'];
+    } else {
+      $ret = false;
     }
 
-    /**
-     * Close the session
-     * @return bool
-     */
-    public function close() {
+    return $ret;
+  }
 
-        return $this->dbConnection->close();
 
-    }
+  /**
+   * Write the session
+   * @param int session id
+   * @param string data of the session
+   */
+  public function write($id, $data) {
+    $stmt = $this->dbh->prepare("REPLACE INTO {$this->dbTable} (id,data,timestamp) VALUES (:id,:data,:timestamp)");
+    $ret = $stmt->execute(
+      array(':id' => $id,
+        ':data' => $data,
+        'timestamp' => time()
+      ));
 
-    /**
-     * Read the session
-     * @param int session id
-     * @return string string of the sessoin
-     */
-    public function read($id) {
+    return $ret;
+  }
 
-        $sql = sprintf("SELECT data FROM %s WHERE id = '%s'", $this->dbTable, $this->dbConnection->escape_string($id));
-        if ($result = $this->dbConnection->query($sql)) {
-            if ($result->num_rows && $result->num_rows > 0) {
-                $record = $result->fetch_assoc();
-                return $record['data'];
-            } else {
-                return false;
-            }
-        } else {
-            return false;
-        }
-        return true;
-        
-    }
-    
+  /**
+   * Destroy the session
+   * @param int session id
+   * @return bool
+   */
+  public function destroy($id) {
+    $stmt = $this->dbh->prepare("DELETE FROM {$this->dbTable} WHERE id=:id");
+    $ret = $stmt->execute(array(
+      ':id' => $id
+    ));
 
-    /**
-     * Write the session
-     * @param int session id
-     * @param string data of the session
-     */
-    public function write($id, $data) {
+    return $ret;
+  }
 
-        $sql = sprintf("REPLACE INTO %s VALUES('%s', '%s', '%s')",
-        			   $this->dbTable, 
-                       $this->dbConnection->escape_string($id),
-                       $this->dbConnection->escape_string($data),
-                       time());
-        return $this->dbConnection->query($sql);
 
-    }
+  /**
+   * Garbage Collector
+   * @param int life time (sec.)
+   * @return bool
+   * @see session.gc_divisor      100
+   * @see session.gc_maxlifetime 1440
+   * @see session.gc_probability    1
+   * @usage execution rate 1/100
+   *        (session.gc_probability/session.gc_divisor)
+   */
+  public function gc($max) {
+    $stmt = $this->dbh->prepare("DELETE FROM {$this->dbTable} WHERE timestamp < :limit");
+    $ret = $stmt->execute(array(':limit' => time() - intval($max)));
 
-    /**
-     * Destoroy the session
-     * @param int session id
-     * @return bool
-     */
-    public function destroy($id) {
-
-        $sql = sprintf("DELETE FROM %s WHERE `id` = '%s'", $this->dbTable, $this->dbConnection->escape_string($id));
-        return $this->dbConnection->query($sql);
-
-	}
-	
-	
-
-    /**
-     * Garbage Collector
-     * @param int life time (sec.)
-     * @return bool
-     * @see session.gc_divisor      100
-     * @see session.gc_maxlifetime 1440
-     * @see session.gc_probability    1
-     * @usage execution rate 1/100
-     *        (session.gc_probability/session.gc_divisor)
-     */
-    public function gc($max) {
-
-        $sql = sprintf("DELETE FROM %s WHERE `timestamp` < '%s'", $this->dbTable, time() - intval($max));
-        return $this->dbConnection->query($sql);
-
-    }
+    return $ret;
+  }
 
 }//class
